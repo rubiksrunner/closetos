@@ -34,6 +34,8 @@ h3 { color: #20201e; font-family: Georgia, 'Times New Roman', serif; font-size: 
 .item-form input, .item-form select { background: #fffdf9; border: 1px solid #cfc9c1; border-radius: 0; color: #20201e; font: inherit; font-size: 1rem; font-weight: 400; padding: 12px; }
 .item-form input:focus, .item-form select:focus { outline: 2px solid #20201e; outline-offset: 2px; }
 .item-form .primary-button { justify-self: start; margin-top: 8px; }
+.item-form .primary-button:disabled { cursor: wait; opacity: 0.65; }
+.form-message { background: #f1eee9; color: #514a43; font-size: 0.86rem; line-height: 1.5; margin: 0; padding: 12px; }
 .close-button { background: transparent; border: 0; color: #625d58; cursor: pointer; font-size: 2rem; line-height: 1; padding: 0; position: absolute; right: 20px; top: 16px; }
 .optional { color: #776f68; font-size: 0.75rem; font-weight: 400; }
 .loading-screen { align-items: center; background: #fffdf9; color: #625d58; display: flex; justify-content: center; min-height: 100vh; }

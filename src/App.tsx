@@ -4,7 +4,7 @@ import './App.css'
 import { supabase } from './lib/supabase'
 
 type ClothingItem = {
-  id: number
+  id: string
   name: string
   category: string
   colour: string
@@ -19,8 +19,11 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoadingSession, setIsLoadingSession] = useState(true)
   const [items, setItems] = useState<ClothingItem[]>([])
+  const [isLoadingItems, setIsLoadingItems] = useState(true)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [form, setForm] = useState(initialForm)
+  const [formMessage, setFormMessage] = useState('')
+  const [isSavingItem, setIsSavingItem] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,12 +39,48 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  function addItem(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (!session) {
+      setItems([])
+      setIsLoadingItems(false)
+      return
+    }
+
+    async function loadItems() {
+      setIsLoadingItems(true)
+      const { data, error } = await supabase
+        .from('clothing_items')
+        .select('id, name, category, colour, season')
+        .order('created_at', { ascending: false })
+
+      if (!error && data) {
+        setItems(data)
+      }
+      setIsLoadingItems(false)
+    }
+
+    void loadItems()
+  }, [session])
+
+  async function addItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setItems((currentItems) => [
-      ...currentItems,
-      { id: Date.now(), ...form },
-    ])
+    if (!session) return
+
+    setIsSavingItem(true)
+    setFormMessage('')
+    const { data, error } = await supabase
+      .from('clothing_items')
+      .insert({ ...form, user_id: session.user.id })
+      .select('id, name, category, colour, season')
+      .single()
+    setIsSavingItem(false)
+
+    if (error) {
+      setFormMessage('Your item could not be saved. Please try again.')
+      return
+    }
+
+    setItems((currentItems) => [data, ...currentItems])
     setForm(initialForm)
     setIsFormOpen(false)
   }
@@ -82,7 +121,7 @@ function App() {
       <section className="overview" aria-labelledby="overview-title">
         <div>
           <p className="eyebrow">Your closet</p>
-          <h2 id="overview-title">A fresh start</h2>
+          <h2 id="overview-title">{isLoadingItems ? 'Loading your closet…' : items.length === 0 ? 'A fresh start' : 'Your wardrobe'}</h2>
         </div>
         <div className="stats" aria-label="Closet summary">
           <article className="stat-card"><span className="stat-number">{items.length}</span><span className="stat-label">Clothing items</span></article>
@@ -139,7 +178,8 @@ function App() {
                   <option>All seasons</option><option>Spring</option><option>Summer</option><option>Autumn</option><option>Winter</option>
                 </select>
               </label>
-              <button type="submit" className="primary-button">Add to closet</button>
+              {formMessage && <p className="form-message" role="alert">{formMessage}</p>}
+              <button type="submit" className="primary-button" disabled={isSavingItem}>{isSavingItem ? 'Saving…' : 'Add to closet'}</button>
             </form>
           </section>
         </div>
