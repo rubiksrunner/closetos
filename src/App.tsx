@@ -1,5 +1,7 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
+import { type Session } from '@supabase/supabase-js'
 import './App.css'
+import { supabase } from './lib/supabase'
 
 type ClothingItem = {
   id: number
@@ -14,9 +16,25 @@ const categories = ['Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Shoes', 'Accesso
 const initialForm = { name: '', category: 'Tops', colour: '', season: 'All seasons' }
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [isLoadingSession, setIsLoadingSession] = useState(true)
   const [items, setItems] = useState<ClothingItem[]>([])
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [form, setForm] = useState(initialForm)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setIsLoadingSession(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setIsLoadingSession(false)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   function addItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -28,11 +46,26 @@ function App() {
     setIsFormOpen(false)
   }
 
+  async function signOut() {
+    await supabase.auth.signOut()
+  }
+
+  if (isLoadingSession) {
+    return <main className="loading-screen">Opening your closet…</main>
+  }
+
+  if (!session) {
+    return <AuthScreen />
+  }
+
   return (
     <main className="app-shell">
       <header className="site-header">
         <a className="brand" href="/" aria-label="ClosetOS home">ClosetOS</a>
-        <span className="header-note">Your digital wardrobe</span>
+        <div className="account-menu">
+          <span className="header-note">{session.user.email}</span>
+          <button type="button" className="text-button" onClick={signOut}>Sign out</button>
+        </div>
       </header>
 
       <section className="welcome" aria-labelledby="welcome-title">
@@ -111,6 +144,72 @@ function App() {
           </section>
         </div>
       )}
+    </main>
+  )
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSubmitting(true)
+    setMessage('')
+
+    const result = mode === 'signUp'
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password })
+
+    setIsSubmitting(false)
+
+    if (result.error) {
+      setMessage(result.error.message)
+      return
+    }
+
+    if (mode === 'signUp' && !result.data.session) {
+      setMessage('Check your email to confirm your account, then return here to sign in.')
+    }
+  }
+
+  const isSignUp = mode === 'signUp'
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-intro">
+        <a className="brand" href="/" aria-label="ClosetOS home">ClosetOS</a>
+        <div>
+          <p className="eyebrow">Your digital wardrobe</p>
+          <h1>Dress with intention.</h1>
+          <p className="intro">A private home for every piece you own and every outfit you want to remember.</p>
+        </div>
+      </section>
+
+      <section className="auth-card" aria-labelledby="auth-title">
+        <p className="eyebrow">{isSignUp ? 'Begin your closet' : 'Welcome back'}</p>
+        <h2 id="auth-title">{isSignUp ? 'Create your account' : 'Sign in to ClosetOS'}</h2>
+        <form onSubmit={handleSubmit}>
+          <label>
+            Email address
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isSignUp ? 'new-password' : 'current-password'} minLength={6} required />
+          </label>
+          {message && <p className="auth-message" role="status">{message}</p>}
+          <button type="submit" className="primary-button" disabled={isSubmitting}>
+            {isSubmitting ? 'Please wait…' : isSignUp ? 'Create account' : 'Sign in'}
+          </button>
+        </form>
+        <button type="button" className="auth-switch" onClick={() => { setMode(isSignUp ? 'signIn' : 'signUp'); setMessage('') }}>
+          {isSignUp ? 'Already have an account? Sign in' : 'New to ClosetOS? Create an account'}
+        </button>
+      </section>
     </main>
   )
 }
