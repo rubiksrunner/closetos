@@ -21,9 +21,11 @@ function App() {
   const [items, setItems] = useState<ClothingItem[]>([])
   const [isLoadingItems, setIsLoadingItems] = useState(true)
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<ClothingItem | null>(null)
   const [form, setForm] = useState(initialForm)
   const [formMessage, setFormMessage] = useState('')
   const [isSavingItem, setIsSavingItem] = useState(false)
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -62,27 +64,70 @@ function App() {
     void loadItems()
   }, [session])
 
-  async function addItem(event: FormEvent<HTMLFormElement>) {
+  function openNewItemForm() {
+    setEditingItem(null)
+    setForm(initialForm)
+    setFormMessage('')
+    setIsFormOpen(true)
+  }
+
+  function openEditItemForm(item: ClothingItem) {
+    setEditingItem(item)
+    setForm({ name: item.name, category: item.category, colour: item.colour ?? '', season: item.season })
+    setFormMessage('')
+    setIsFormOpen(true)
+  }
+
+  function closeItemForm() {
+    setIsFormOpen(false)
+    setFormMessage('')
+  }
+
+  async function saveItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!session) return
 
     setIsSavingItem(true)
     setFormMessage('')
-    const { data, error } = await supabase
-      .from('clothing_items')
-      .insert({ ...form, user_id: session.user.id })
-      .select('id, name, category, colour, season')
-      .single()
+    const query = editingItem
+      ? supabase
+          .from('clothing_items')
+          .update(form)
+          .eq('id', editingItem.id)
+          .select('id, name, category, colour, season')
+          .single()
+      : supabase
+          .from('clothing_items')
+          .insert({ ...form, user_id: session.user.id })
+          .select('id, name, category, colour, season')
+          .single()
+    const { data, error } = await query
     setIsSavingItem(false)
 
     if (error) {
-      setFormMessage('Your item could not be saved. Please try again.')
+      setFormMessage(`Your item could not be ${editingItem ? 'updated' : 'saved'}. Please try again.`)
       return
     }
 
-    setItems((currentItems) => [data, ...currentItems])
+    setItems((currentItems) => editingItem
+      ? currentItems.map((item) => item.id === data.id ? data : item)
+      : [data, ...currentItems])
     setForm(initialForm)
-    setIsFormOpen(false)
+    setEditingItem(null)
+    closeItemForm()
+  }
+
+  async function deleteItem(item: ClothingItem) {
+    const shouldDelete = window.confirm(`Delete “${item.name}” from your closet? This cannot be undone.`)
+    if (!shouldDelete) return
+
+    setDeletingItemId(item.id)
+    const { error } = await supabase.from('clothing_items').delete().eq('id', item.id)
+    setDeletingItemId(null)
+
+    if (!error) {
+      setItems((currentItems) => currentItems.filter((currentItem) => currentItem.id !== item.id))
+    }
   }
 
   async function signOut() {
@@ -113,7 +158,7 @@ function App() {
         <p className="intro">
           Keep every piece in one calm, organised place. Add your first item to begin building your digital closet.
         </p>
-        <button type="button" className="primary-button" onClick={() => setIsFormOpen(true)}>
+        <button type="button" className="primary-button" onClick={openNewItemForm}>
           Add your first item
         </button>
       </section>
@@ -136,7 +181,7 @@ function App() {
               <p className="eyebrow">Recently added</p>
               <h2 id="items-title">Your pieces</h2>
             </div>
-            <button type="button" className="text-button" onClick={() => setIsFormOpen(true)}>Add another</button>
+            <button type="button" className="text-button" onClick={openNewItemForm}>Add another</button>
           </div>
           <div className="item-grid">
             {items.map((item) => (
@@ -145,6 +190,12 @@ function App() {
                 <p className="item-category">{item.category}</p>
                 <h3>{item.name}</h3>
                 <p className="item-details">{item.colour || 'Colour not set'} · {item.season}</p>
+                <div className="card-actions">
+                  <button type="button" className="text-button" onClick={() => openEditItemForm(item)}>Edit</button>
+                  <button type="button" className="text-button danger-button" onClick={() => void deleteItem(item)} disabled={deletingItemId === item.id}>
+                    {deletingItemId === item.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -152,12 +203,12 @@ function App() {
       )}
 
       {isFormOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsFormOpen(false)}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeItemForm}>
           <section className="item-form" role="dialog" aria-modal="true" aria-labelledby="form-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button type="button" className="close-button" onClick={() => setIsFormOpen(false)} aria-label="Close form">×</button>
-            <p className="eyebrow">New clothing item</p>
-            <h2 id="form-title">Add a piece to your closet</h2>
-            <form onSubmit={addItem}>
+            <button type="button" className="close-button" onClick={closeItemForm} aria-label="Close form">×</button>
+            <p className="eyebrow">{editingItem ? 'Edit clothing item' : 'New clothing item'}</p>
+            <h2 id="form-title">{editingItem ? 'Update your piece' : 'Add a piece to your closet'}</h2>
+            <form onSubmit={saveItem}>
               <label>
                 Item name
                 <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Black linen shirt" required autoFocus />
@@ -179,7 +230,7 @@ function App() {
                 </select>
               </label>
               {formMessage && <p className="form-message" role="alert">{formMessage}</p>}
-              <button type="submit" className="primary-button" disabled={isSavingItem}>{isSavingItem ? 'Saving…' : 'Add to closet'}</button>
+              <button type="submit" className="primary-button" disabled={isSavingItem}>{isSavingItem ? 'Saving…' : editingItem ? 'Save changes' : 'Add to closet'}</button>
             </form>
           </section>
         </div>
